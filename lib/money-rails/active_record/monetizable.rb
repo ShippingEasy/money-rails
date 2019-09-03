@@ -55,6 +55,15 @@ module MoneyRails
                                    "Use :as option to explicitly specify the name or change the amount column postfix in the initializer."
             end
 
+            # Infers precision based on field's column type when desired
+            if !options.has_key?(:infinite_precision) && MoneyRails.infer_precision?
+              # Only attempt column introspection when backing table exists
+              if self.table_exists?
+                column_definition = self.columns_hash[subunit_name]
+                options[:infinite_precision] = column_definition && column_definition.type == :decimal
+              end
+            end
+
             # Optional accessor to be run on an instance to detect currency
             instance_currency_name = options[:with_model_currency] ||
               options[:model_currency] ||
@@ -194,14 +203,14 @@ module MoneyRails
           if memoized.currency == attr_currency
             result = memoized
           else
-            memoized_amount = memoized.amount.to_money(attr_currency)
+            memoized_amount = memoized.amount.to_money(attr_currency, options.slice(:infinite_precision))
             write_attribute subunit_name, memoized_amount.cents
             # Cache the value (it may be nil)
             result = instance_variable_set("@#{name}", memoized_amount)
           end
         elsif amount.present?
           # If amount is NOT nil (or empty string) load the amount in a Money
-          amount = Money.new(amount, attr_currency)
+          amount = Money.new(amount, attr_currency, options.slice(:infinite_precision))
 
           # Cache the value (it may be nil)
           result = instance_variable_set("@#{name}", amount)
@@ -230,7 +239,7 @@ module MoneyRails
             money = value
           else
             begin
-              money = value.to_money(public_send("currency_for_#{name}"))
+              money = value.to_money(public_send("currency_for_#{name}"), options.slice(:infinite_precision))
             rescue NoMethodError
               return nil
             rescue Money::Currency::UnknownCurrency, Monetize::ParseError => e
